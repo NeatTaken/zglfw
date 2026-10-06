@@ -1,4 +1,5 @@
 const std = @import("std");
+const Translator = @import("translate_c").Translator;
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
@@ -28,16 +29,26 @@ pub fn build(b: *std.Build) void {
     };
 
     const options_step = b.addOptions();
-    inline for (std.meta.fields(@TypeOf(options))) |field| {
-        options_step.addOption(field.type, field.name, @field(options, field.name));
+    const options_fields = @typeInfo(@TypeOf(options)).@"struct";
+    inline for (options_fields.field_types, options_fields.field_names) |field_type, field_name| {
+        options_step.addOption(field_type, field_name, @field(options, field_name));
     }
 
     const options_module = options_step.createModule();
+
+    const translate_c = b.dependency("translate_c", .{});
+
+    const translator: Translator = .init(translate_c, .{
+        .c_source_file = b.path("src/c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     const module = b.addModule("root", .{
         .root_source_file = b.path("src/zglfw.zig"),
         .imports = &.{
             .{ .name = "zglfw_options", .module = options_module },
+            .{ .name = "c", .module = translator.mod },
         },
     });
 
@@ -190,6 +201,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/zglfw.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "c", .module = translator.mod },
+            },
         }),
     });
     addIncludePaths(b, tests.root_module, target, options);
